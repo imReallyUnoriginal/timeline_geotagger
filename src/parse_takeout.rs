@@ -283,6 +283,43 @@ impl LocationData {
     }
 }
 
+
+fn get_location_between_points(
+    locations: &[Option<LocationData>; 2],
+    timestamp: &DateTime<Utc>,
+) -> Option<LocationData> {
+    if locations[0].is_none() || locations[1].is_none() {
+        return None;
+    }
+
+    let past_location = locations[0].as_ref().unwrap();
+    let future_location = locations[1].as_ref().unwrap();
+
+    let total_duration = future_location.relative_seconds - past_location.relative_seconds;
+    let elapsed_duration = -past_location.relative_seconds;
+    let progress: f64 = elapsed_duration as f64 / total_duration as f64;
+
+    let lat = past_location.lat + (future_location.lat - past_location.lat) * progress;
+    let lng = past_location.lng + (future_location.lng - past_location.lng) * progress;
+    let altitude = if past_location.altitude.is_some() && future_location.altitude.is_some() {
+        Some(
+            past_location.altitude.unwrap()
+                + (future_location.altitude.unwrap() - past_location.altitude.unwrap())
+                    * progress,
+        )
+    } else {
+        None
+    };
+
+    Some(LocationData {
+        lat,
+        lng,
+        altitude,
+        timestamp: timestamp.clone(),
+        relative_seconds: 0,
+    })
+}
+
 impl TimelineData {
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, Box<dyn Error>> {
         // Stolen from https://github.com/paritytech/substrate/pull/10137
@@ -305,7 +342,7 @@ impl TimelineData {
             locations = self.get_location_from_semantic_segments(timestamp);
         }
 
-        TimelineData::get_location_between_points(&locations, timestamp)
+        get_location_between_points(&locations, timestamp)
     }
 
     fn get_location_from_raw_signals(
@@ -437,42 +474,6 @@ impl TimelineData {
 
         locations
     }
-
-    fn get_location_between_points(
-        locations: &[Option<LocationData>; 2],
-        timestamp: &DateTime<Utc>,
-    ) -> Option<LocationData> {
-        if locations[0].is_none() || locations[1].is_none() {
-            return None;
-        }
-
-        let past_location = locations[0].as_ref().unwrap();
-        let future_location = locations[1].as_ref().unwrap();
-
-        let total_duration = future_location.relative_seconds - past_location.relative_seconds;
-        let elapsed_duration = -past_location.relative_seconds;
-        let progress: f64 = elapsed_duration as f64 / total_duration as f64;
-
-        let lat = past_location.lat + (future_location.lat - past_location.lat) * progress;
-        let lng = past_location.lng + (future_location.lng - past_location.lng) * progress;
-        let altitude = if past_location.altitude.is_some() && future_location.altitude.is_some() {
-            Some(
-                past_location.altitude.unwrap()
-                    + (future_location.altitude.unwrap() - past_location.altitude.unwrap())
-                        * progress,
-            )
-        } else {
-            None
-        };
-
-        Some(LocationData {
-            lat,
-            lng,
-            altitude,
-            timestamp: timestamp.clone(),
-            relative_seconds: 0,
-        })
-    }
 }
 
 #[cfg(test)]
@@ -597,7 +598,7 @@ mod tests {
             .unwrap()
             .with_timezone(&Utc);
 
-        let location = TimelineData::get_location_between_points(&locations, &timestamp);
+        let location = get_location_between_points(&locations, &timestamp);
 
         assert!(location.is_some());
         let location = location.unwrap();
