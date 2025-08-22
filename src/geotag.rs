@@ -99,18 +99,23 @@ fn geotag_photo(
         .unwrap()
         .to_utc();
 
-    let location = timeline_data.get_location_at(&photo_time).ok_or_else(|| {
-        format!(
+    let result = timeline_data.get_point_at(&photo_time);
+
+    if result.is_err() {
+        return Err(format!(
             "No location found for photo {} at time {}",
             photo_path.display(),
             photo_time
         )
-    })?;
+        .into());
+    }
+
+    let point = result.unwrap();
 
     // Convert decimal degrees to DMS format (required by EXIF GPS standard)
     // GPS coordinates must be stored as degrees, minutes, seconds in rational format
-    let (lat_degrees, lat_minutes, lat_seconds) = decimal_to_dms(location.lat);
-    let (lng_degrees, lng_minutes, lng_seconds) = decimal_to_dms(location.lng);
+    let (lat_degrees, lat_minutes, lat_seconds) = decimal_to_dms(point.lat);
+    let (lng_degrees, lng_minutes, lng_seconds) = decimal_to_dms(point.lng);
 
     // Set GPS coordinates in DMS format (3 rational numbers: degrees, minutes, seconds)
     metadata.set_tag(ExifTag::GPSLatitude(vec![
@@ -118,15 +123,15 @@ fn geotag_photo(
         lat_minutes.into(),
         lat_seconds.into(),
     ]));
-    metadata.set_tag(ExifTag::GPSLatitudeRef(get_latitude_ref(location.lat)));
+    metadata.set_tag(ExifTag::GPSLatitudeRef(get_latitude_ref(point.lat)));
     
     metadata.set_tag(ExifTag::GPSLongitude(vec![
         lng_degrees.into(),
         lng_minutes.into(),
         lng_seconds.into(),
     ]));
-    metadata.set_tag(ExifTag::GPSLongitudeRef(get_longitude_ref(location.lng)));
-    if let Some(altitude) = location.altitude {
+    metadata.set_tag(ExifTag::GPSLongitudeRef(get_longitude_ref(point.lng)));
+    if let Some(altitude) = point.altitude {
         metadata.set_tag(ExifTag::GPSAltitude(vec![altitude.abs().into()]));
         metadata.set_tag(ExifTag::GPSAltitudeRef(vec![if altitude >= 0.0 {
             0 // Above sea level

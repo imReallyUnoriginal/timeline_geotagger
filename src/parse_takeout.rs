@@ -1,7 +1,8 @@
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
-
 use std::{error::Error, fs::File, path::Path};
+
+use crate::line::{Line, Point};
 
 #[derive(Deserialize, Debug)]
 struct FrequentPlace {
@@ -260,66 +261,6 @@ pub struct TimelineData {
     _user_location_profile: UserLocationProfile,
 }
 
-#[derive(Debug)]
-pub struct LocationData {
-    pub lat: f64,
-    pub lng: f64,
-    pub altitude: Option<f64>,
-    pub timestamp: DateTime<Utc>,
-    pub relative_seconds: i64,
-}
-
-impl LocationData {
-    pub fn parse_lat_lng(lat_lng: &str) -> Option<(f64, f64)> {
-        let trimmed = lat_lng.trim().replace("°", "");
-        let parts: Vec<&str> = trimmed.split(',').collect();
-        if parts.len() == 2 {
-            let lat = parts[0].trim().parse::<f64>().ok()?;
-            let lng = parts[1].trim().parse::<f64>().ok()?;
-            Some((lat, lng))
-        } else {
-            None
-        }
-    }
-}
-
-
-fn get_location_between_points(
-    locations: &[Option<LocationData>; 2],
-    timestamp: &DateTime<Utc>,
-) -> Option<LocationData> {
-    if locations[0].is_none() || locations[1].is_none() {
-        return None;
-    }
-
-    let past_location = locations[0].as_ref().unwrap();
-    let future_location = locations[1].as_ref().unwrap();
-
-    let total_duration = future_location.relative_seconds - past_location.relative_seconds;
-    let elapsed_duration = -past_location.relative_seconds;
-    let progress: f64 = elapsed_duration as f64 / total_duration as f64;
-
-    let lat = past_location.lat + (future_location.lat - past_location.lat) * progress;
-    let lng = past_location.lng + (future_location.lng - past_location.lng) * progress;
-    let altitude = if past_location.altitude.is_some() && future_location.altitude.is_some() {
-        Some(
-            past_location.altitude.unwrap()
-                + (future_location.altitude.unwrap() - past_location.altitude.unwrap())
-                    * progress,
-        )
-    } else {
-        None
-    };
-
-    Some(LocationData {
-        lat,
-        lng,
-        altitude,
-        timestamp: timestamp.clone(),
-        relative_seconds: 0,
-    })
-}
-
 impl TimelineData {
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, Box<dyn Error>> {
         // Stolen from https://github.com/paritytech/substrate/pull/10137
@@ -335,21 +276,25 @@ impl TimelineData {
         Ok(timeline_data)
     }
 
-    pub fn get_location_at(&self, timestamp: &DateTime<Utc>) -> Option<LocationData> {
-        let mut locations = self.get_location_from_raw_signals(timestamp);
+    pub fn get_point_at(&self, timestamp: &DateTime<Utc>) -> Result<Point, String> {
+        let mut line = self.get_line_from_raw_signals(timestamp);
 
-        if locations[0].is_none() || locations[1].is_none() {
-            locations = self.get_location_from_semantic_segments(timestamp);
+        if line.is_none() {
+            line = self.get_line_from_semantic_segments(timestamp);
         }
 
-        get_location_between_points(&locations, timestamp)
+        match line {
+            Some(line) => line.get_point_at(timestamp),
+            None => Err("No valid line found".into()),
+        }
     }
 
-    fn get_location_from_raw_signals(
+    fn get_line_from_raw_signals(
         &self,
         timestamp: &DateTime<Utc>,
-    ) -> [Option<LocationData>; 2] {
-        let mut locations: [Option<LocationData>; 2] = [None, None];
+    ) -> Option<Line> {
+        let mut start: Option<Point> = None;
+        let mut end: Option<Point> = None;
 
         for raw_signal in &self.raw_signals {
             let RawSignal::Position {
@@ -371,7 +316,7 @@ impl TimelineData {
 
             let diff = (raw_timestamp - *timestamp).num_seconds();
 
-            let lat_lng = LocationData::parse_lat_lng(&lat_lng);
+            let lat_lng = Point::parse_lat_lng(&lat_lng);
             if lat_lng.is_none() {
                 continue; // Skip if lat_lng parsing fails
             }
@@ -379,10 +324,10 @@ impl TimelineData {
             let (lat, lng) = lat_lng.unwrap();
 
             if diff < 0
-                && (locations[0].is_none()
-                    || locations[0].as_ref().unwrap().relative_seconds < diff)
+                && (start.is_none()
+                    || start.as_ref().unwrap().relative_seconds < diff)
             {
-                locations[0] = Some(LocationData {
+                start = Some(Point {
                     lat,
                     lng,
                     altitude: altitude_meters.to_owned(),
@@ -392,10 +337,10 @@ impl TimelineData {
             }
 
             if diff > 0
-                && (locations[1].is_none()
-                    || locations[1].as_ref().unwrap().relative_seconds > diff)
+                && (end.is_none()
+                    || end.as_ref().unwrap().relative_seconds > diff)
             {
-                locations[1] = Some(LocationData {
+                end = Some(Point {
                     lat,
                     lng,
                     altitude: altitude_meters.to_owned(),
@@ -405,14 +350,19 @@ impl TimelineData {
             }
         }
 
-        locations
+        if start.is_some() && end.is_some() {
+            Some(Line::new(start.unwrap(), end.unwrap()))
+        } else {
+            None
+        }
     }
 
-    fn get_location_from_semantic_segments(
+    fn get_line_from_semantic_segments(
         &self,
         timestamp: &DateTime<Utc>,
-    ) -> [Option<LocationData>; 2] {
-        let mut locations: [Option<LocationData>; 2] = [None, None];
+    ) -> Option<Line> {
+        let mut start: Option<Point> = None;
+        let mut end: Option<Point> = None;
 
         for segment in &self.semantic_segments {
             let SemanticSegment::Path {
@@ -437,7 +387,7 @@ impl TimelineData {
     
                 let diff = (point_timestamp - *timestamp).num_seconds();
     
-                let lat_lng = LocationData::parse_lat_lng(&lat_lng);
+                let lat_lng = Point::parse_lat_lng(&lat_lng);
                 if lat_lng.is_none() {
                     continue; // Skip if lat_lng parsing fails
                 }
@@ -445,10 +395,10 @@ impl TimelineData {
                 let (lat, lng) = lat_lng.unwrap();
     
                 if diff < 0
-                    && (locations[0].is_none()
-                        || locations[0].as_ref().unwrap().relative_seconds < diff)
+                    && (start.is_none()
+                        || start.as_ref().unwrap().relative_seconds < diff)
                 {
-                    locations[0] = Some(LocationData {
+                    start = Some(Point {
                         lat,
                         lng,
                         altitude: None,
@@ -458,10 +408,10 @@ impl TimelineData {
                 }
     
                 if diff > 0
-                    && (locations[1].is_none()
-                        || locations[1].as_ref().unwrap().relative_seconds > diff)
+                    && (end.is_none()
+                        || end.as_ref().unwrap().relative_seconds > diff)
                 {
-                    locations[1] = Some(LocationData {
+                    end = Some(Point {
                         lat,
                         lng,
                         altitude: None,
@@ -472,7 +422,11 @@ impl TimelineData {
             }
         }
 
-        locations
+        if start.is_some() && end.is_some() {
+            Some(Line::new(start.unwrap(), end.unwrap()))
+        } else {
+            None
+        }
     }
 }
 
@@ -502,7 +456,7 @@ mod tests {
     }
 
     #[test]
-    fn test_get_location_from_raw_signals() {
+    fn test_get_line_from_raw_signals() {
         let path = "tests/basic_example.json";
         let data = TimelineData::from_path(path).unwrap();
 
@@ -510,24 +464,21 @@ mod tests {
             .unwrap()
             .with_timezone(&Utc);
 
-        let locations = data.get_location_from_raw_signals(&timestamp);
-        assert!(locations[0].is_some());
-        let location = locations[0].as_ref().unwrap();
-        assert_eq!(location.lat, 54.7973628);
-        assert_eq!(location.lng, -1.5921431);
-        assert_eq!(location.altitude, Some(75.5999984741211));
-        assert_eq!(location.relative_seconds, -10);
-
-        assert!(locations[1].is_some());
-        let location = locations[1].as_ref().unwrap();
-        assert_eq!(location.lat, 54.7973675);
-        assert_eq!(location.lng, -1.592149);
-        assert_eq!(location.altitude, Some(75.5999984741211));
-        assert_eq!(location.relative_seconds, 39);
+        let line = data.get_line_from_raw_signals(&timestamp);
+        assert!(line.is_some());
+        let location = line.as_ref().unwrap();
+        assert_eq!(location.start.lat, 54.7973628);
+        assert_eq!(location.start.lng, -1.5921431);
+        assert_eq!(location.start.altitude, Some(75.5999984741211));
+        assert_eq!(location.start.relative_seconds, -10);
+        assert_eq!(location.end.lat, 54.7973675);
+        assert_eq!(location.end.lng, -1.592149);
+        assert_eq!(location.end.altitude, Some(75.5999984741211));
+        assert_eq!(location.end.relative_seconds, 39);
     }
     
     #[test]
-    fn test_get_location_from_semantic_segments() {
+    fn test_get_line_from_semantic_segments() {
         let path = "tests/basic_example.json";
         let data = TimelineData::from_path(path).unwrap();
 
@@ -535,81 +486,38 @@ mod tests {
             .unwrap()
             .with_timezone(&Utc);
 
-        let locations = data.get_location_from_semantic_segments(&timestamp);
-        assert!(locations[0].is_some());
-        let location = locations[0].as_ref().unwrap();
-        assert_eq!(location.lat, 50.1451596);
-        assert_eq!(location.lng, 5.6022914);
-        assert_eq!(location.altitude, None);
-        assert_eq!(location.relative_seconds, -20);
-
-        assert!(locations[1].is_some());
-        let location = locations[1].as_ref().unwrap();
-        assert_eq!(location.lat, 50.1417194);
-        assert_eq!(location.lng, 5.5951741);
-        assert_eq!(location.altitude, None);
-        assert_eq!(location.relative_seconds, 160);
+        let line = data.get_line_from_semantic_segments(&timestamp);
+        assert!(line.is_some());
+        let line = line.unwrap();
+        assert_eq!(line.start.lat, 50.1451596);
+        assert_eq!(line.start.lng, 5.6022914);
+        assert_eq!(line.start.altitude, None);
+        assert_eq!(line.start.relative_seconds, -20);
+        assert_eq!(line.end.lat, 50.1417194);
+        assert_eq!(line.end.lng, 5.5951741);
+        assert_eq!(line.end.altitude, None);
+        assert_eq!(line.end.relative_seconds, 160);
 
         // Between 2 paths
         let timestamp = DateTime::parse_from_rfc3339("2023-08-29T13:02:00.000+01:00")
             .unwrap()
             .with_timezone(&Utc);
 
-        let locations = data.get_location_from_semantic_segments(&timestamp);
-        assert!(locations[0].is_some());
-        let location = locations[0].as_ref().unwrap();
-        assert_eq!(location.lat, 50.1351735);
-        assert_eq!(location.lng, 5.5929213);
-        assert_eq!(location.altitude, None);
-        assert_eq!(location.relative_seconds, -600);
-
-        assert!(locations[1].is_some());
-        let location = locations[1].as_ref().unwrap();
-        assert_eq!(location.lat, 50.1173907);
-        assert_eq!(location.lng, 5.62853);
-        assert_eq!(location.altitude, None);
-        assert_eq!(location.relative_seconds, 180);
+        let line = data.get_line_from_semantic_segments(&timestamp);
+        assert!(line.is_some());
+        let line = line.unwrap();
+        assert_eq!(line.start.lat, 50.1351735);
+        assert_eq!(line.start.lng, 5.5929213);
+        assert_eq!(line.start.altitude, None);
+        assert_eq!(line.start.relative_seconds, -600);
+        assert_eq!(line.end.lat, 50.1173907);
+        assert_eq!(line.end.lng, 5.62853);
+        assert_eq!(line.end.altitude, None);
+        assert_eq!(line.end.relative_seconds, 180);
     }
 
     #[test]
-    fn test_get_location_between_points() {
-        let locations = [
-            Some(LocationData {
-                lat: 55.0000000,
-                lng: -1.5000000,
-                altitude: Some(75.0000000000000),
-                timestamp: DateTime::parse_from_rfc3339("2025-07-11T16:20:00.000+01:00")
-                    .unwrap()
-                    .with_timezone(&Utc),
-                relative_seconds: -60,
-            }),
-            Some(LocationData {
-                lat: 57.0000000,
-                lng: -2.0000000,
-                altitude: Some(76.0000000000000),
-                timestamp: DateTime::parse_from_rfc3339("2025-07-11T16:25:00.000+01:00")
-                    .unwrap()
-                    .with_timezone(&Utc),
-                relative_seconds: 240,
-            }),
-        ];
-
-        let timestamp = DateTime::parse_from_rfc3339("2025-07-11T16:21:00.000+01:00")
-            .unwrap()
-            .with_timezone(&Utc);
-
-        let location = get_location_between_points(&locations, &timestamp);
-
-        assert!(location.is_some());
-        let location = location.unwrap();
-        assert_eq!(location.lat, 55.4000000);
-        assert_eq!(location.lng, -1.6000000);
-        assert_eq!(location.altitude, Some(75.2000000000000));
-        assert_eq!(location.relative_seconds, 0);
-    }
-
-    #[test]
-    fn test_get_location_at() {
+    fn test_get_point_at() {
         let path = "tests/basic_example.json";
         let data = TimelineData::from_path(path).unwrap();
 
@@ -618,25 +526,25 @@ mod tests {
             .unwrap()
             .with_timezone(&Utc);
 
-        let location = data.get_location_at(&timestamp);
-        assert!(location.is_some());
-        let location = location.unwrap();
-        assert_eq!(location.lat, 54.797363759183675);
-        assert_eq!(location.lng, -1.5921443040816325);
-        assert_eq!(location.altitude, Some(75.5999984741211));
-        assert_eq!(location.relative_seconds, 0);
+        let point = data.get_point_at(&timestamp);
+        assert!(point.is_ok());
+        let point = point.unwrap();
+        assert_eq!(point.lat, 54.797363759183675);
+        assert_eq!(point.lng, -1.5921443040816325);
+        assert_eq!(point.altitude, Some(75.5999984741211));
+        assert_eq!(point.relative_seconds, 0);
 
         // From semantic segments
         let timestamp = DateTime::parse_from_rfc3339("2023-08-29T12:37:20.000+01:00")
             .unwrap()
             .with_timezone(&Utc);
 
-        let location = data.get_location_at(&timestamp);
-        assert!(location.is_some());
-        let location = location.unwrap();
-        assert_eq!(location.lat, 50.144777355555554);
-        assert_eq!(location.lng, 5.601500588888889);
-        assert_eq!(location.altitude, None);
-        assert_eq!(location.relative_seconds, 0);
+        let point = data.get_point_at(&timestamp);
+        assert!(point.is_ok());
+        let point = point.unwrap();
+        assert_eq!(point.lat, 50.144777355555554);
+        assert_eq!(point.lng, 5.601500588888889);
+        assert_eq!(point.altitude, None);
+        assert_eq!(point.relative_seconds, 0);
     }
 }

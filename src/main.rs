@@ -1,5 +1,6 @@
 pub mod file_system_autocomplete;
 pub mod timezone_autocomplete;
+pub mod line;
 pub mod geotag;
 pub mod parse_takeout;
 
