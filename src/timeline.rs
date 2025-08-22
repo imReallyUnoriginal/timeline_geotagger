@@ -305,27 +305,16 @@ impl Timeline {
                 continue; // Skip non-position signals
             };
 
-            let raw_timestamp = match DateTime::parse_from_rfc3339(raw_timestamp) {
-                Ok(dt) => dt.with_timezone(&Utc),
-                Err(_) => continue,
-            };
+            let point = Point::from_timeline(
+                lat_lng,
+                raw_timestamp,
+                altitude_meters,
+                timestamp,
+            );
 
-            let diff = (raw_timestamp - *timestamp).num_seconds();
-
-            let (lat, lng) = match Point::parse_lat_lng(&lat_lng) {
-                Some((lat, lng)) => (lat, lng),
-                None => continue,
-            };
-
-            let point = Point {
-                lat,
-                lng,
-                altitude: altitude_meters.to_owned(),
-                timestamp: raw_timestamp,
-                relative_seconds: diff,
-            };
-
-            line_builder.add_point(point);
+            if let Ok(point) = point {
+                line_builder.add_point(point);
+            }
         }
 
         line_builder.build()
@@ -350,27 +339,16 @@ impl Timeline {
                     time: point_timestamp,
                 } = point;
 
-                let point_timestamp = match DateTime::parse_from_rfc3339(point_timestamp.as_str()) {
-                    Ok(dt) => dt.with_timezone(&Utc),
-                    Err(_) => continue,
-                };
+                let point = Point::from_timeline(
+                    &lat_lng,
+                    point_timestamp,
+                    &None,
+                    timestamp
+                );
 
-                let diff = (point_timestamp - *timestamp).num_seconds();
-
-                let (lat, lng) = match Point::parse_lat_lng(&lat_lng) {
-                    Some((lat, lng)) => (lat, lng),
-                    None => continue,
-                };
-
-                let point = Point {
-                    lat,
-                    lng,
-                    altitude: None,
-                    timestamp: point_timestamp,
-                    relative_seconds: diff,
-                };
-
-                line_builder.add_point(point);
+                if let Ok(point) = point {
+                    line_builder.add_point(point);
+                }
             }
         }
 

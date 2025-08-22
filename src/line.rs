@@ -10,6 +10,37 @@ pub struct Point {
 }
 
 impl Point {
+    pub fn from_timeline(
+        lat_lng: &str,
+        point_timestamp: &String,
+        altitude: &Option<f64>,
+        relative_timestamp: &DateTime<Utc>,
+    ) -> Result<Self, String> {
+        let timestamp = match DateTime::parse_from_rfc3339(point_timestamp.as_str()) {
+            Ok(dt) => dt.with_timezone(&Utc),
+            Err(_) => {
+                return Err(format!("Invalid timestamp format: {}", point_timestamp).into());
+            }
+        };
+
+        let relative_seconds = (timestamp - *relative_timestamp).num_seconds();
+
+        let (lat, lng) = match Point::parse_lat_lng(&lat_lng) {
+            Some((lat, lng)) => (lat, lng),
+            None => {
+                return Err(format!("Invalid latitude/longitude format: {}", lat_lng).into());
+            }
+        };
+
+        Ok(Self {
+            lat,
+            lng,
+            altitude: altitude.clone(),
+            timestamp,
+            relative_seconds,
+        })
+    }
+
     pub fn parse_lat_lng(lat_lng: &str) -> Option<(f64, f64)> {
         let trimmed = lat_lng.trim().replace("°", "");
         let parts: Vec<&str> = trimmed.split(',').collect();
@@ -33,11 +64,7 @@ impl Line {
         Line { start, end }
     }
 
-    pub fn get_point_at(
-        &self,
-        timestamp: &DateTime<Utc>,
-    ) -> Result<Point, String> {
-
+    pub fn get_point_at(&self, timestamp: &DateTime<Utc>) -> Result<Point, String> {
         if self.start.relative_seconds == self.end.relative_seconds {
             return Ok(self.start.clone());
         }
@@ -55,8 +82,7 @@ impl Line {
         let altitude = if self.start.altitude.is_some() && self.end.altitude.is_some() {
             Some(
                 self.start.altitude.unwrap()
-                    + (self.end.altitude.unwrap() - self.start.altitude.unwrap())
-                        * progress,
+                    + (self.end.altitude.unwrap() - self.start.altitude.unwrap()) * progress,
             )
         } else {
             None
@@ -96,11 +122,17 @@ impl LineBuilder {
     }
 
     pub fn add_point(&mut self, point: Point) -> &mut Self {
-        if point.relative_seconds < 0 && (self.start.is_none() || self.start.as_ref().unwrap().relative_seconds < point.relative_seconds) {
+        if point.relative_seconds < 0
+            && (self.start.is_none()
+                || self.start.as_ref().unwrap().relative_seconds < point.relative_seconds)
+        {
             return self.start(point);
         }
 
-        if point.relative_seconds > 0 && (self.end.is_none() || self.end.as_ref().unwrap().relative_seconds > point.relative_seconds) {
+        if point.relative_seconds > 0
+            && (self.end.is_none()
+                || self.end.as_ref().unwrap().relative_seconds > point.relative_seconds)
+        {
             return self.end(point);
         }
 
@@ -139,7 +171,7 @@ mod tests {
                     .unwrap()
                     .with_timezone(&Utc),
                 relative_seconds: 240,
-            }
+            },
         );
 
         let timestamp = DateTime::parse_from_rfc3339("2025-07-11T16:21:00.000+01:00")
@@ -156,4 +188,3 @@ mod tests {
         assert_eq!(location.relative_seconds, 0);
     }
 }
-
