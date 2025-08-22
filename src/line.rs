@@ -72,6 +72,49 @@ impl Line {
     }
 }
 
+pub struct LineBuilder {
+    start: Option<Point>,
+    end: Option<Point>,
+}
+
+impl LineBuilder {
+    pub fn new() -> Self {
+        LineBuilder {
+            start: None,
+            end: None,
+        }
+    }
+
+    pub fn start(&mut self, point: Point) -> &mut Self {
+        self.start = Some(point);
+        self
+    }
+
+    pub fn end(&mut self, point: Point) -> &mut Self {
+        self.end = Some(point);
+        self
+    }
+
+    pub fn add_point(&mut self, point: Point) -> &mut Self {
+        if point.relative_seconds < 0 && (self.start.is_none() || self.start.as_ref().unwrap().relative_seconds < point.relative_seconds) {
+            return self.start(point);
+        }
+
+        if point.relative_seconds > 0 && (self.end.is_none() || self.end.as_ref().unwrap().relative_seconds > point.relative_seconds) {
+            return self.end(point);
+        }
+
+        self
+    }
+
+    pub fn build(self) -> Option<Line> {
+        match (self.start, self.end) {
+            (Some(start), Some(end)) => Some(Line::new(start, end)),
+            _ => None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

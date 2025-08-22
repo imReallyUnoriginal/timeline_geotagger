@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use std::{error::Error, fs::File, path::Path};
 
-use crate::line::{Line, Point};
+use crate::line::{Line, LineBuilder, Point};
 
 #[derive(Deserialize, Debug)]
 struct FrequentPlace {
@@ -149,11 +149,11 @@ struct Note {
 enum TimelineMemory {
     Trip {
         #[serde(rename = "trip")]
-        _trip: Trip
+        _trip: Trip,
     },
     Note {
         #[serde(rename = "note")]
-        _note: Note
+        _note: Note,
     },
 }
 
@@ -289,12 +289,8 @@ impl Timeline {
         }
     }
 
-    fn get_line_from_raw_signals(
-        &self,
-        timestamp: &DateTime<Utc>,
-    ) -> Option<Line> {
-        let mut start: Option<Point> = None;
-        let mut end: Option<Point> = None;
+    fn get_line_from_raw_signals(&self, timestamp: &DateTime<Utc>) -> Option<Line> {
+        let mut line_builder = LineBuilder::new();
 
         for raw_signal in &self.raw_signals {
             let RawSignal::Position {
@@ -311,58 +307,32 @@ impl Timeline {
 
             let raw_timestamp = match DateTime::parse_from_rfc3339(raw_timestamp) {
                 Ok(dt) => dt.with_timezone(&Utc),
-                Err(_) => continue, // Skip if timestamp parsing fails
+                Err(_) => continue,
             };
 
             let diff = (raw_timestamp - *timestamp).num_seconds();
 
-            let lat_lng = Point::parse_lat_lng(&lat_lng);
-            if lat_lng.is_none() {
-                continue; // Skip if lat_lng parsing fails
-            }
+            let (lat, lng) = match Point::parse_lat_lng(&lat_lng) {
+                Some((lat, lng)) => (lat, lng),
+                None => continue,
+            };
 
-            let (lat, lng) = lat_lng.unwrap();
+            let point = Point {
+                lat,
+                lng,
+                altitude: altitude_meters.to_owned(),
+                timestamp: raw_timestamp,
+                relative_seconds: diff,
+            };
 
-            if diff < 0
-                && (start.is_none()
-                    || start.as_ref().unwrap().relative_seconds < diff)
-            {
-                start = Some(Point {
-                    lat,
-                    lng,
-                    altitude: altitude_meters.to_owned(),
-                    timestamp: raw_timestamp,
-                    relative_seconds: diff,
-                });
-            }
-
-            if diff > 0
-                && (end.is_none()
-                    || end.as_ref().unwrap().relative_seconds > diff)
-            {
-                end = Some(Point {
-                    lat,
-                    lng,
-                    altitude: altitude_meters.to_owned(),
-                    timestamp: raw_timestamp,
-                    relative_seconds: diff,
-                });
-            }
+            line_builder.add_point(point);
         }
 
-        if start.is_some() && end.is_some() {
-            Some(Line::new(start.unwrap(), end.unwrap()))
-        } else {
-            None
-        }
+        line_builder.build()
     }
 
-    fn get_line_from_semantic_segments(
-        &self,
-        timestamp: &DateTime<Utc>,
-    ) -> Option<Line> {
-        let mut start: Option<Point> = None;
-        let mut end: Option<Point> = None;
+    fn get_line_from_semantic_segments(&self, timestamp: &DateTime<Utc>) -> Option<Line> {
+        let mut line_builder = LineBuilder::new();
 
         for segment in &self.semantic_segments {
             let SemanticSegment::Path {
@@ -382,51 +352,29 @@ impl Timeline {
 
                 let point_timestamp = match DateTime::parse_from_rfc3339(point_timestamp.as_str()) {
                     Ok(dt) => dt.with_timezone(&Utc),
-                    Err(_) => continue, // Skip if timestamp parsing fails
+                    Err(_) => continue,
                 };
-    
+
                 let diff = (point_timestamp - *timestamp).num_seconds();
-    
-                let lat_lng = Point::parse_lat_lng(&lat_lng);
-                if lat_lng.is_none() {
-                    continue; // Skip if lat_lng parsing fails
-                }
-    
-                let (lat, lng) = lat_lng.unwrap();
-    
-                if diff < 0
-                    && (start.is_none()
-                        || start.as_ref().unwrap().relative_seconds < diff)
-                {
-                    start = Some(Point {
-                        lat,
-                        lng,
-                        altitude: None,
-                        timestamp: point_timestamp,
-                        relative_seconds: diff,
-                    });
-                }
-    
-                if diff > 0
-                    && (end.is_none()
-                        || end.as_ref().unwrap().relative_seconds > diff)
-                {
-                    end = Some(Point {
-                        lat,
-                        lng,
-                        altitude: None,
-                        timestamp: point_timestamp,
-                        relative_seconds: diff,
-                    });
-                }
+
+                let (lat, lng) = match Point::parse_lat_lng(&lat_lng) {
+                    Some((lat, lng)) => (lat, lng),
+                    None => continue,
+                };
+
+                let point = Point {
+                    lat,
+                    lng,
+                    altitude: None,
+                    timestamp: point_timestamp,
+                    relative_seconds: diff,
+                };
+
+                line_builder.add_point(point);
             }
         }
 
-        if start.is_some() && end.is_some() {
-            Some(Line::new(start.unwrap(), end.unwrap()))
-        } else {
-            None
-        }
+        line_builder.build()
     }
 }
 
@@ -476,7 +424,7 @@ mod tests {
         assert_eq!(location.end.altitude, Some(75.5999984741211));
         assert_eq!(location.end.relative_seconds, 39);
     }
-    
+
     #[test]
     fn test_get_line_from_semantic_segments() {
         let path = "tests/basic_example.json";
