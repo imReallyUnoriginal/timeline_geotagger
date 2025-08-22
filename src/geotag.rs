@@ -4,7 +4,7 @@ use chrono::{NaiveDateTime, Timelike};
 use chrono_tz::Tz;
 use little_exif::{exif_tag::ExifTag, metadata::Metadata};
 
-use crate::parse_takeout::TimelineData;
+use crate::timeline::Timeline;
 
 /// Convert decimal degrees to degrees, minutes, seconds
 fn decimal_to_dms(decimal: f64) -> (u32, u32, f64) {
@@ -26,7 +26,7 @@ fn get_longitude_ref(longitude: f64) -> String {
 }
 
 pub fn geotag_photos(
-    timeline_data: &TimelineData,
+    timeline: &Timeline,
     photos_path: &Path,
     photo_timezone: Tz
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -49,14 +49,14 @@ pub fn geotag_photos(
     }
 
     for photo in photos {
-        geotag_photo(timeline_data, &photo.path(), photo_timezone)?;
+        geotag_photo(timeline, &photo.path(), photo_timezone)?;
     }
 
     Ok(())
 }
 
 fn geotag_photo(
-    timeline_data: &TimelineData,
+    timeline: &Timeline,
     photo_path: &Path,
     photo_timezone: Tz
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -99,7 +99,7 @@ fn geotag_photo(
         .unwrap()
         .to_utc();
 
-    let result = timeline_data.get_point_at(&photo_time);
+    let result = timeline.get_point_at(&photo_time);
 
     if result.is_err() {
         return Err(format!(

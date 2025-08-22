@@ -252,7 +252,7 @@ enum RawSignal {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct TimelineData {
+pub struct Timeline {
     #[serde(rename = "semanticSegments")]
     semantic_segments: Vec<SemanticSegment>,
     #[serde(rename = "rawSignals")]
@@ -261,7 +261,7 @@ pub struct TimelineData {
     _user_location_profile: UserLocationProfile,
 }
 
-impl TimelineData {
+impl Timeline {
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, Box<dyn Error>> {
         // Stolen from https://github.com/paritytech/substrate/pull/10137
 
@@ -437,7 +437,7 @@ mod tests {
     #[test]
     fn test_from_path() {
         let path = "tests/basic_example.json";
-        let result = TimelineData::from_path(path);
+        let result = Timeline::from_path(path);
         assert!(
             result.is_ok(),
             "Failed to parse takeout data: {:?}",
@@ -458,7 +458,7 @@ mod tests {
     #[test]
     fn test_get_line_from_raw_signals() {
         let path = "tests/basic_example.json";
-        let data = TimelineData::from_path(path).unwrap();
+        let data = Timeline::from_path(path).unwrap();
 
         let timestamp = DateTime::parse_from_rfc3339("2025-08-11T16:26:00.000+01:00")
             .unwrap()
@@ -480,7 +480,7 @@ mod tests {
     #[test]
     fn test_get_line_from_semantic_segments() {
         let path = "tests/basic_example.json";
-        let data = TimelineData::from_path(path).unwrap();
+        let data = Timeline::from_path(path).unwrap();
 
         let timestamp = DateTime::parse_from_rfc3339("2023-08-29T12:37:20.000+01:00")
             .unwrap()
@@ -519,7 +519,7 @@ mod tests {
     #[test]
     fn test_get_point_at() {
         let path = "tests/basic_example.json";
-        let data = TimelineData::from_path(path).unwrap();
+        let data = Timeline::from_path(path).unwrap();
 
         // From raw signals
         let timestamp = DateTime::parse_from_rfc3339("2025-08-11T16:26:00.000+01:00")

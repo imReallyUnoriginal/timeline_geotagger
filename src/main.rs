@@ -2,12 +2,12 @@ pub mod file_system_autocomplete;
 pub mod timezone_autocomplete;
 pub mod line;
 pub mod geotag;
-pub mod parse_takeout;
+pub mod timeline;
 
 use crate::{
     file_system_autocomplete::FileSystemAutocomplete,
     timezone_autocomplete::TimezoneAutocomplete,
-    parse_takeout::TimelineData
+    timeline::Timeline
 };
 use chrono_tz::{Tz};
 use inquire::{validator::Validation, Text};
@@ -34,7 +34,7 @@ fn main() {
 
     println!("Parsing timeline file: {}", timeline_path.display());
 
-    let parsed_json = match TimelineData::from_path(timeline_path) {
+    let timeline = match Timeline::from_path(timeline_path) {
         Ok(json) => json,
         Err(e) => {
             eprintln!("Error parsing timeline file: {}", e);
@@ -76,7 +76,7 @@ fn main() {
 
     let photo_timezone = Tz::from_str(&photo_timezone).expect("Failed to parse timezone");
 
-    match geotag::geotag_photos(&parsed_json, photos_path, photo_timezone) {
+    match geotag::geotag_photos(&timeline, photos_path, photo_timezone) {
         Ok(_) => println!("Geotagging completed successfully!"),
         Err(e) => eprintln!("Error geotagging photos: {}", e),
     }
