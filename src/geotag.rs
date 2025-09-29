@@ -17,27 +17,32 @@ fn decimal_to_dms(decimal: f64) -> (u32, u32, f64) {
 
 /// Get GPS latitude hemisphere reference (N/S)
 fn get_latitude_ref(latitude: f64) -> String {
-    if latitude >= 0.0 { "N".to_string() } else { "S".to_string() }
+    if latitude >= 0.0 {
+        "N".to_string()
+    } else {
+        "S".to_string()
+    }
 }
 
 /// Get GPS longitude hemisphere reference (E/W)
 fn get_longitude_ref(longitude: f64) -> String {
-    if longitude >= 0.0 { "E".to_string() } else { "W".to_string() }
+    if longitude >= 0.0 {
+        "E".to_string()
+    } else {
+        "W".to_string()
+    }
 }
 
 pub fn geotag_photos(
     timeline: &Timeline,
     photos_path: &Path,
-    photo_timezone: Tz
+    photo_timezone: Tz,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let photos = fs::read_dir(photos_path)?
         .filter_map(Result::ok)
         .filter(|entry| {
             entry.path().is_file()
-            && entry
-                .path()
-                .extension()
-                .map_or(false, |ext| {
+                && entry.path().extension().map_or(false, |ext| {
                     let string = ext.to_string_lossy().to_lowercase();
                     string == "jpg" || string == "jpeg" || string == "png"
                 })
@@ -58,7 +63,7 @@ pub fn geotag_photos(
 fn geotag_photo(
     timeline: &Timeline,
     photo_path: &Path,
-    photo_timezone: Tz
+    photo_timezone: Tz,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let extension = photo_path
         .extension()
@@ -124,7 +129,7 @@ fn geotag_photo(
         lat_seconds.into(),
     ]));
     metadata.set_tag(ExifTag::GPSLatitudeRef(get_latitude_ref(point.lat)));
-    
+
     metadata.set_tag(ExifTag::GPSLongitude(vec![
         lng_degrees.into(),
         lng_minutes.into(),
@@ -144,11 +149,16 @@ fn geotag_photo(
         photo_time.minute().into(),
         photo_time.second().into(),
     ]));
-    metadata.set_tag(ExifTag::GPSDateStamp(photo_time.date_naive().format("%Y:%m:%d").to_string()));
+    metadata.set_tag(ExifTag::GPSDateStamp(
+        photo_time.date_naive().format("%Y:%m:%d").to_string(),
+    ));
     metadata.set_tag(ExifTag::GPSVersionID(vec![2, 2, 0, 0]));
 
     match metadata.write_to_file(photo_path) {
-        Ok(()) => println!("Successfully wrote metadata to photo: {}", photo_path.display()),
+        Ok(()) => println!(
+            "Successfully wrote metadata to photo: {}",
+            photo_path.display()
+        ),
         Err(e) => eprintln!("Failed to write metadata to photo: {}", e),
     }
 

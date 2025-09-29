@@ -1,16 +1,15 @@
 pub mod file_system_autocomplete;
-pub mod timezone_autocomplete;
-pub mod line;
 pub mod geotag;
+pub mod line;
 pub mod timeline;
+pub mod timezone_autocomplete;
 
 use crate::{
-    file_system_autocomplete::FileSystemAutocomplete,
+    file_system_autocomplete::FileSystemAutocomplete, timeline::Timeline,
     timezone_autocomplete::TimezoneAutocomplete,
-    timeline::Timeline
 };
-use chrono_tz::{Tz};
-use inquire::{validator::Validation, Text};
+use chrono_tz::Tz;
+use inquire::{Text, validator::Validation};
 use std::{path::Path, str::FromStr};
 
 fn main() {

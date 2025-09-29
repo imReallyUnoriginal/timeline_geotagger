@@ -1,5 +1,5 @@
 use chrono_tz::TZ_VARIANTS;
-use inquire::{autocompletion::Replacement, Autocomplete};
+use inquire::{Autocomplete, autocompletion::Replacement};
 
 #[derive(Clone)]
 pub struct TimezoneAutocomplete;
@@ -26,7 +26,11 @@ impl Autocomplete for TimezoneAutocomplete {
     fn get_suggestions(&mut self, input: &str) -> Result<Vec<String>, inquire::CustomUserError> {
         let variants = TZ_VARIANTS
             .iter()
-            .filter(|tz| tz.to_string().to_lowercase().contains(&input.to_lowercase()))
+            .filter(|tz| {
+                tz.to_string()
+                    .to_lowercase()
+                    .contains(&input.to_lowercase())
+            })
             .map(|tz| tz.to_string())
             .collect::<Vec<_>>();
         Ok(variants)
