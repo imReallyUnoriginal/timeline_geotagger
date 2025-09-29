@@ -1,31 +1,21 @@
-use inquire::{autocompletion::Replacement, Autocomplete};
+use inquire::{Autocomplete, autocompletion::Replacement};
 
 #[derive(Clone)]
 pub struct FileSystemAutocomplete {
-    directories: bool,
     files: bool,
 }
 
 impl FileSystemAutocomplete {
     pub fn files() -> Self {
-        Self {
-            directories: false,
-            files: true,
-        }
+        Self { files: true }
     }
 
     pub fn directories() -> Self {
-        Self {
-            directories: true,
-            files: false,
-        }
+        Self { files: false }
     }
 
-    pub fn both() -> Self {
-        Self {
-            directories: true,
-            files: true,
-        }
+    pub fn all() -> Self {
+        Self { files: true }
     }
 }
 
@@ -81,9 +71,6 @@ impl Autocomplete for FileSystemAutocomplete {
                     let file_name = file_name_os.to_string_lossy();
                     if file_name.starts_with(&partial_name) {
                         let full_path = base_dir.join(file_name.as_ref());
-                        if !self.directories && full_path.is_dir() {
-                            continue; // Skip directories if only files are requested
-                        }
                         if !self.files && full_path.is_file() {
                             continue; // Skip files if only directories are requested
                         }

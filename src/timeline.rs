@@ -57,11 +57,11 @@ struct Persona {
 #[derive(Deserialize, Debug)]
 struct UserLocationProfile {
     #[serde(rename = "frequentPlaces")]
-    _frequent_places: Vec<FrequentPlace>,
+    _frequent_places: Option<Vec<FrequentPlace>>,
     #[serde(rename = "frequentTrips")]
-    _frequent_trips: Vec<FrequentTrip>,
+    _frequent_trips: Option<Vec<FrequentTrip>>,
     #[serde(rename = "persona")]
-    _persona: Persona,
+    _persona: Option<Persona>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -305,12 +305,7 @@ impl Timeline {
                 continue; // Skip non-position signals
             };
 
-            let point = Point::from_timeline(
-                lat_lng,
-                raw_timestamp,
-                altitude_meters,
-                timestamp,
-            );
+            let point = Point::from_timeline(lat_lng, raw_timestamp, altitude_meters, timestamp);
 
             if let Ok(point) = point {
                 line_builder.add_point(point);
@@ -339,12 +334,7 @@ impl Timeline {
                     time: point_timestamp,
                 } = point;
 
-                let point = Point::from_timeline(
-                    &lat_lng,
-                    point_timestamp,
-                    &None,
-                    timestamp
-                );
+                let point = Point::from_timeline(&lat_lng, point_timestamp, &None, timestamp);
 
                 if let Ok(point) = point {
                     line_builder.add_point(point);
