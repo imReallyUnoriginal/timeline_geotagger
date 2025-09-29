@@ -2,6 +2,11 @@
 name = "timeline_geotagger"
 version = "0.1.0"
 edition = "2024"
+description = "CLI to geotag photos using Google Maps Timeline JSON"
+license = "MIT"
+repository = "https://github.com/imrlyunoriginal/timeline_geotagger"
+homepage = "https://github.com/imrlyunoriginal/timeline_geotagger"
+readme = "README.md"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }

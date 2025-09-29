@@ -1,0 +1,71 @@
+name: release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Build (release)
+        run: cargo build --release
+
+      - name: Prepare artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          OS="${{ runner.os }}"
+          ARCH_RAW="${{ runner.arch }}"
+          case "$ARCH_RAW" in
+            X64) ARCH="x86_64" ;;
+            ARM64) ARCH="arm64" ;;
+            *) ARCH="$(uname -m 2>/dev/null || echo unknown)"; [ "$ARCH" = "aarch64" ] && ARCH="arm64" ;;
+          esac
+
+          case "$OS" in
+            Linux)   OS_TAG="linux";   BIN="target/release/timeline_geotagger" ;;
+            macOS)   OS_TAG="macos";   BIN="target/release/timeline_geotagger" ;;
+            Windows) OS_TAG="windows"; BIN="target/release/timeline_geotagger.exe" ;;
+          esac
+
+          OUT="timeline_geotagger-${OS_TAG}-${ARCH}"
+          STAGE="dist/$OUT"
+          mkdir -p "$STAGE"
+          cp "$BIN" "$STAGE/"
+          if [ "$OS" != "Windows" ]; then
+            chmod +x "$STAGE/timeline_geotagger"
+          fi
+          [ -f LICENSE ] && cp LICENSE "$STAGE/"
+          [ -f README.md ] && cp README.md "$STAGE/"
+
+          mkdir -p dist
+          tar -C dist -czf "dist/$OUT.tar.gz" "$OUT"
+          echo "ARTIFACT=dist/$OUT.tar.gz" >> $GITHUB_ENV
+
+      - name: Upload artifact to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ARTIFACT }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+
